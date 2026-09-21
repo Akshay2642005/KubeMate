@@ -1,0 +1,8 @@
+# agent tooling (not needed in the build)
+.claude
+.agents
+.env*
+.next
+node_modules
+source
+.git
