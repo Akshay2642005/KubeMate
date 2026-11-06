@@ -12,6 +12,10 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      # Next.js collects route configuration during build; Kubernetes injects
+      # the actual connection string into the running application container.
+      DATABASE_URL: postgresql://kubernetes_agent:kubernetes_agent@localhost:5432/kubernetes_agent
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

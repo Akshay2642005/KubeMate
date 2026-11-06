@@ -153,6 +153,24 @@ KubeMate ships with a repeatable image-to-cluster release path:
 4. The deploy script creates configuration and secrets, applies the manifests,
    runs the schema push job, and waits for the rollout.
 
+### Deploy KubeMate
+
+Review the [production deploy script](https://github.com/Akshay2642005/KubeMate/blob/master/scripts/deploy.sh)
+before running it. From a clone of this repository, set the required values and
+run:
+
+```bash
+IMAGE=ghcr.io/akshay2642005/kubemate:0.1.0 \
+AI_PROVIDER=openrouter \
+AI_MODEL=openai/gpt-4o-mini \
+AI_API_KEY=... \
+DB_PASSWORD=... \
+./scripts/deploy.sh
+```
+
+The script reads the production manifests from the checked-out repository, so
+download the repository or clone it before running the command.
+
 ### GitHub Actions
 
 Pushing a semantic version tag such as `0.1.0` publishes
@@ -168,17 +186,6 @@ release image reference to `master`. CI does not deploy to a cluster.
 | `DB_PASSWORD` | PostgreSQL application password for manual deployment |
 
 The workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
-
-### Manual production deployment
-
-```bash
-IMAGE=ghcr.io/akshay2642005/kubemate:0.1.0 \
-AI_PROVIDER=openrouter \
-AI_MODEL=openai/gpt-4o-mini \
-AI_API_KEY=... \
-DB_PASSWORD=... \
-./scripts/deploy.sh
-```
 
 The production overlay is [`k8s/production`](k8s/production), built on the
 shared [`k8s/base`](k8s/base) resources. The local interactive cluster flow is
@@ -211,5 +218,4 @@ available through [`scripts/develop-test.sh`](scripts/develop-test.sh).
 
 ## License
 
-KubeMate is currently an internal project. Add a license before distributing it
-outside your organization.
+KubeMate is licensed under the [MIT License](LICENSE).
