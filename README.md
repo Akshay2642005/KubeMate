@@ -156,8 +156,9 @@ KubeMate ships with a repeatable image-to-cluster release path:
 ### Deploy KubeMate
 
 Review the [production deploy script](https://github.com/Akshay2642005/KubeMate/blob/master/scripts/deploy.sh)
-before running it. From a clone of this repository, set the required values and
-run:
+before running it. The script only deploys an image that is already published;
+it never builds one. From a clone of this repository, set the required values
+and run:
 
 ```bash
 IMAGE=ghcr.io/akshay2642005/kubemate:0.1.0 \
@@ -168,8 +169,25 @@ DB_PASSWORD=... \
 ./scripts/deploy.sh
 ```
 
+`IMAGE` is optional. When it is unset, the script deploys the reference pinned
+in `k8s/production/kustomization.yaml`, which the release workflow keeps current.
+Set `ASSUME_YES=yes` to skip the context confirmation in non-interactive jobs.
+
 The script reads the production manifests from the checked-out repository, so
 download the repository or clone it before running the command.
+
+### Deploy a local build
+
+[`scripts/dev-deploy.sh`](scripts/dev-deploy.sh) is the development counterpart.
+It builds the image with Docker, optionally loads it into a local `kind` or
+`minikube` cluster, and applies the base manifests from `k8s/`:
+
+```bash
+./scripts/dev-deploy.sh
+```
+
+The script prompts for the Kubernetes context, the model provider, the API key,
+and the Postgres password, so no secrets are written to the repository.
 
 ### GitHub Actions
 
@@ -188,8 +206,8 @@ release image reference to `master`. CI does not deploy to a cluster.
 The workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 The production overlay is [`k8s/production`](k8s/production), built on the
-shared [`k8s/base`](k8s/base) resources. The local interactive cluster flow is
-available through [`scripts/develop-test.sh`](scripts/develop-test.sh).
+shared [`k8s/base`](k8s/base) resources. The local build flow is available
+through [`scripts/dev-deploy.sh`](scripts/dev-deploy.sh).
 
 ## Repository layout
 

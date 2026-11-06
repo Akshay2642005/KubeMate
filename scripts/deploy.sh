@@ -1,43 +1,60 @@
 #!/usr/bin/env bash
+#
+# Deploy a published KubeMate image to a cluster.
+#
+# This script never builds anything. Publish an image with the release workflow
+# (push a semantic version tag) or with `docker build` plus `docker push`, then:
+#
+#   IMAGE=ghcr.io/akshay2642005/kubemate:0.1.0 \
+#   AI_PROVIDER=openrouter \
+#   AI_MODEL=openai/gpt-4o-mini \
+#   AI_API_KEY=... \
+#   DB_PASSWORD=... \
+#   ./scripts/deploy.sh
+#
+# IMAGE is optional: it defaults to the reference pinned in
+# k8s/production/kustomization.yaml, which the release workflow keeps current.
+#
+# For a local build against a local cluster, use ./scripts/dev-deploy.sh.
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NAMESPACE="kubernetes-agent"
-IMAGE="${IMAGE:-kubernetes-agent:local}"
-LOAD_IMAGE="${LOAD_IMAGE:-ask}"
-PUSH_IMAGE="${PUSH_IMAGE:-no}"
+NAMESPACE="${NAMESPACE:-kubernetes-agent}"
+PROVIDER="${AI_PROVIDER:-openrouter}"
+AI_MODEL="${AI_MODEL:-openai/gpt-4o-mini}"
+AI_API_KEY="${AI_API_KEY:-}"
+DB_PASSWORD="${DB_PASSWORD:-}"
+ASSUME_YES="${ASSUME_YES:-no}"
 
 die() {
   printf 'Error: %s\n' "$*" >&2
   exit 1
 }
 
-command -v docker >/dev/null || die "docker is required"
+# The release workflow rewrites newName/newTag on every version tag, so reading
+# the overlay keeps this script on the same image the manifests already pin.
+DEFAULT_IMAGE="$(
+  awk '/^[[:space:]]*newName:/{name=$2} /^[[:space:]]*newTag:/{tag=$2} END{if (name && tag) print name ":" tag}' \
+    "$ROOT_DIR/k8s/production/kustomization.yaml"
+)"
+IMAGE="${IMAGE:-$DEFAULT_IMAGE}"
+
+MANIFEST_NAMESPACE="$(awk '/^namespace:/{print $2; exit}' "$ROOT_DIR/k8s/base/kustomization.yaml")"
+
 command -v kubectl >/dev/null || die "kubectl is required for deployment"
+[[ -n "$DEFAULT_IMAGE" ]] || die "could not read an image reference from k8s/production/kustomization.yaml"
+[[ -n "$IMAGE" ]] || die "IMAGE is empty"
+[[ "$IMAGE" == *:* || "$IMAGE" == *"@sha256:"* ]] || die "IMAGE must include a tag, for example ghcr.io/acme/kubemate:0.1.0"
+[[ -n "$AI_MODEL" ]] || die "AI_MODEL is required"
+[[ -n "$AI_API_KEY" ]] || die "AI_API_KEY is required"
+[[ "$NAMESPACE" == "$MANIFEST_NAMESPACE" ]] \
+  || die "NAMESPACE is '$NAMESPACE' but the manifests deploy to '$MANIFEST_NAMESPACE'"
 
-printf 'Kubernetes context: '
-CURRENT_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
-printf '%s\n' "${CURRENT_CONTEXT:-none}"
-[[ -n "$CURRENT_CONTEXT" ]] || die "kubectl has no current context"
-read -r -p "Deploy to this context? [y/N] " CONFIRM_CONTEXT
-[[ "$CONFIRM_CONTEXT" =~ ^[Yy]$ ]] || die "deployment cancelled"
-
-read -r -p "Provider [openrouter/groq/nvidia] (openrouter): " PROVIDER
-PROVIDER="${PROVIDER:-openrouter}"
 case "$PROVIDER" in
-  openrouter) DEFAULT_MODEL="openai/gpt-4o-mini" ;;
-  groq) DEFAULT_MODEL="llama-3.3-70b-versatile" ;;
-  nvidia) DEFAULT_MODEL="meta/llama-3.1-70b-instruct" ;;
-  *) die "provider must be openrouter, groq, or nvidia" ;;
+  openrouter|groq|nvidia) ;;
+  *) die "AI_PROVIDER must be openrouter, groq, or nvidia" ;;
 esac
 
-read -r -p "Model (${DEFAULT_MODEL}): " AI_MODEL
-AI_MODEL="${AI_MODEL:-$DEFAULT_MODEL}"
-read -r -s -p "${PROVIDER} API key: " AI_API_KEY
-printf '\n'
-[[ -n "$AI_API_KEY" ]] || die "API key cannot be empty"
-
-DB_PASSWORD="${DB_PASSWORD:-}"
 if [[ -z "$DB_PASSWORD" ]]; then
   EXISTING_DB_PASSWORD_B64="$(kubectl -n "$NAMESPACE" get secret kubernetes-agent-secrets -o jsonpath='{.data.DATABASE_PASSWORD}' 2>/dev/null || true)"
   if [[ -n "$EXISTING_DB_PASSWORD_B64" ]]; then
@@ -51,32 +68,19 @@ if [[ -z "$DB_PASSWORD" ]]; then
     DB_PASSWORD="$(openssl rand -hex 24)"
     printf 'Generated a Postgres password for this deployment.\n'
   else
-    read -r -s -p "Postgres password: " DB_PASSWORD
-    printf '\n'
+    die "DB_PASSWORD is required when no existing Secret is present and openssl is unavailable"
   fi
 fi
-[[ -n "$DB_PASSWORD" ]] || die "Postgres password cannot be empty"
+[[ -n "$DB_PASSWORD" ]] || die "DB_PASSWORD cannot be empty"
 
-printf 'Building image %s...\n' "$IMAGE"
-docker build --tag "$IMAGE" "$ROOT_DIR"
+CURRENT_CONTEXT="$(kubectl config current-context 2>/dev/null || true)"
+[[ -n "$CURRENT_CONTEXT" ]] || die "kubectl has no current context"
+printf 'Target context: %s\nTarget namespace: %s\nImage: %s\n' \
+  "$CURRENT_CONTEXT" "$NAMESPACE" "$IMAGE"
 
-if [[ "$LOAD_IMAGE" == "ask" ]]; then
-  read -r -p "Load the image into a local kind/minikube cluster? [Y/n] " LOAD_ANSWER
-  [[ "$LOAD_ANSWER" =~ ^[Nn]$ ]] && LOAD_IMAGE="no" || LOAD_IMAGE="yes"
-fi
-
-if [[ "$LOAD_IMAGE" == "yes" ]]; then
-  if command -v minikube >/dev/null && minikube status >/dev/null 2>&1; then
-    minikube image load "$IMAGE"
-  elif command -v kind >/dev/null; then
-    kind load docker-image "$IMAGE"
-  else
-    die "LOAD_IMAGE=yes requires a running minikube or kind cluster"
-  fi
-elif [[ "$PUSH_IMAGE" == "yes" ]]; then
-  docker push "$IMAGE"
-else
-  printf 'The cluster must already be able to pull %s.\n' "$IMAGE"
+if [[ "$ASSUME_YES" != "yes" && -t 0 ]]; then
+  read -r -p "Deploy to this context? [y/N] " CONFIRM_CONTEXT
+  [[ "$CONFIRM_CONTEXT" =~ ^[Yy]$ ]] || die "deployment cancelled"
 fi
 
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
@@ -96,16 +100,22 @@ kubectl -n "$NAMESPACE" create secret generic kubernetes-agent-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n "$NAMESPACE" delete job kubernetes-agent-db-push --ignore-not-found
-kubectl kustomize "$ROOT_DIR/k8s" \
-  | sed "s|image: kubernetes-agent:local|image: ${IMAGE}|g" \
-  | kubectl apply -f -
+
+RENDERED="$(kubectl kustomize "$ROOT_DIR/k8s/production")"
+if [[ "$IMAGE" != "$DEFAULT_IMAGE" ]]; then
+  RENDERED="${RENDERED//image: $DEFAULT_IMAGE/image: $IMAGE}"
+fi
+grep -qF "image: $IMAGE" <<< "$RENDERED" \
+  || die "the rendered manifests do not reference $IMAGE; refusing to apply"
+printf '%s\n' "$RENDERED" | kubectl apply -f -
 
 printf 'Waiting for Postgres to become ready...\n'
 kubectl -n "$NAMESPACE" wait --for=condition=ready pod/kubernetes-agent-postgres-0 --timeout=180s
 
-# The StatefulSet uses a persistent volume, so changing the Kubernetes Secret
-# does not change the password stored in an already-initialized Postgres role.
-# Reconcile the role through Postgres' local trust connection before migrating.
+# The StatefulSet keeps its initialized role password in the persistent volume,
+# so changing the Kubernetes Secret does not change the password stored in an
+# already-initialized Postgres role. Reconcile the role over Postgres' local
+# trust connection before running the schema job.
 ESCAPED_DB_PASSWORD="${DB_PASSWORD//\'/\'\'}"
 printf "ALTER ROLE kubernetes_agent PASSWORD '%s';\n" "$ESCAPED_DB_PASSWORD" \
   | kubectl -n "$NAMESPACE" exec -i statefulset/kubernetes-agent-postgres -c postgres -- \

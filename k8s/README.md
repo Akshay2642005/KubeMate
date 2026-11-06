@@ -13,12 +13,12 @@ Render the manifests with:
 kubectl kustomize k8s/
 ```
 
-For a complete test deployment, run the root-level wizard instead. It builds
-the image and creates provider/database secrets without writing them to the
-repository:
+For a complete test deployment, build the image locally and deploy it with the
+development script, which creates the provider and database secrets without
+writing them to the repository:
 
 ```bash
-./scripts/develop-test.sh
+./scripts/dev-deploy.sh
 ```
 
 Apply them only after reviewing the rendered output and selecting the target
