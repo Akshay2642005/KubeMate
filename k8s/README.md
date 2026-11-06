@@ -18,7 +18,7 @@ the image and creates provider/database secrets without writing them to the
 repository:
 
 ```bash
-./scripts/deploy-test.sh
+./scripts/develop-test.sh
 ```
 
 Apply them only after reviewing the rendered output and selecting the target
