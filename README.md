@@ -146,7 +146,8 @@ bun run build
 KubeMate ships with a repeatable image-to-cluster release path:
 
 1. GitHub Actions verifies the application and builds the Docker image.
-2. The image is published to GHCR with an immutable commit SHA tag.
+2. The image is published to GHCR with an immutable release tag and short-SHA
+   companion tag.
 3. The production Kustomize overlay renders the application, PostgreSQL,
    ServiceAccount, RBAC, Service, and schema job.
 4. The deploy script creates configuration and secrets, applies the manifests,
@@ -154,25 +155,24 @@ KubeMate ships with a repeatable image-to-cluster release path:
 
 ### GitHub Actions
 
-Pushes to `master` publish `ghcr.io/<owner>/<repository>:sha-<short-sha>`.
-To enable the optional deployment job, set the repository variable
-`KUBEMATE_DEPLOY=true` and configure these secrets in the `production`
-environment:
+Pushing a semantic version tag such as `0.1.0` publishes
+`ghcr.io/akshay2642005/kubemate:0.1.0` and its short-SHA companion tag. The
+workflow then updates `k8s/production/kustomization.yaml` and commits the
+release image reference to `master`. CI does not deploy to a cluster.
 
 | Secret | Purpose |
 |---|---|
-| `KUBE_CONFIG` | Kubeconfig for the target cluster |
 | `AI_PROVIDER` | `openrouter`, `groq`, or `nvidia` |
 | `AI_MODEL` | Provider-specific model name |
-| `AI_API_KEY` | Model provider credential |
-| `DB_PASSWORD` | PostgreSQL application password |
+| `AI_API_KEY` | Model provider credential for manual deployment |
+| `DB_PASSWORD` | PostgreSQL application password for manual deployment |
 
 The workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ### Manual production deployment
 
 ```bash
-IMAGE=ghcr.io/OWNER/kubemate:sha-abc123 \
+IMAGE=ghcr.io/akshay2642005/kubemate:0.1.0 \
 AI_PROVIDER=openrouter \
 AI_MODEL=openai/gpt-4o-mini \
 AI_API_KEY=... \

@@ -5,8 +5,7 @@ resources:
   - ../base
 
 images:
-  # The workflow and deploy script replace this repository placeholder with
-  # the immutable GHCR image being released.
+  # The release workflow updates this image reference when a version tag is published.
   - name: kubernetes-agent:local
-    newName: ghcr.io/OWNER/kubemate
+    newName: ghcr.io/akshay2642005/kubemate
     newTag: latest
