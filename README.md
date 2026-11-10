@@ -1,6 +1,8 @@
-<h1 align="center">KubeMate</h1>
+<div align="center">
 
-<p align="center"><strong>The AI command center for Kubernetes teams — investigate incidents, understand workloads, and plan safe changes through a team of specialist agents.</strong></p>
+# KubeMate
+
+**The AI command center for Kubernetes teams — investigate incidents, understand workloads, and plan safe changes through a team of specialist agents.**
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js&logoColor=white)](https://nextjs.org)
 [![Bun](https://img.shields.io/badge/Bun-1.4.3-f9f1e1?logo=bun&logoColor=14151a)](https://bun.sh)
@@ -10,7 +12,9 @@
 
 [Why KubeMate](#why-kubemate) · [Capabilities](#capabilities) · [Architecture](#architecture) · [Quickstart](#quickstart) · [Production](#production-deployment) · [Security](#security-by-design)
 
-<!--<p align="center"><img src="public/logo.svg" alt="KubeMate logo" width="160" /></p>-->
+</div>
+
+---
 
 ---
 
