@@ -132,29 +132,29 @@ function ToolCard({
   children: ReactNode
 }) {
   return (
-    <div className="my-2 overflow-hidden rounded-lg border bg-card text-card-foreground">
-      <div className="flex items-center gap-2 border-b bg-muted/40 px-3 py-1.5 text-xs">
+    <div className="my-3 overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+      <div className="flex items-center gap-2 border-b bg-muted/30 px-3.5 py-2">
         <Icon
           className={cn(
-            "size-3.5",
-            failed ? "text-destructive" : "text-muted-foreground"
+            "size-4",
+            failed ? "text-destructive" : "text-primary"
           )}
         />
-        <span className="font-mono font-medium text-foreground">{tool}</span>
+        <span className="font-mono text-xs font-medium text-foreground">{tool}</span>
         <span
           aria-hidden="true"
           className={cn(
-            "size-1.5 rounded-full",
+            "ml-1 size-2 rounded-full",
             failed ? "bg-red-500" : "bg-emerald-500"
           )}
         />
         {summary ? (
-          <span className="ml-auto truncate text-muted-foreground">
+          <span className="ml-auto truncate text-xs text-muted-foreground">
             {summary}
           </span>
         ) : null}
       </div>
-      <div className="p-3 text-xs">{children}</div>
+      <div className="p-3.5 text-xs">{children}</div>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowUp, CircleAlert, Square } from "lucide-react"
+import { ArrowUp, CheckCircle2, CircleAlert, Clock3, ShieldAlert, Square, XCircle } from "lucide-react"
 import { useState, type FormEvent, type KeyboardEvent } from "react"
 
 import { ChatAvatar } from "@/components/chat-avatar"
@@ -67,11 +67,13 @@ function ApprovalDetails({ data }: { data: ApprovalRequest }) {
   if ("value" in input) rows.push(["Label value", input.value])
 
   return (
-    <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+    <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
       {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-muted-foreground">{label}</dt>
-          <dd className="truncate font-mono">{value}</dd>
+        <div key={label} className="min-w-0 rounded-md border bg-background/70 px-2.5 py-2">
+          <dt className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+            {label}
+          </dt>
+          <dd className="mt-1 truncate font-mono text-xs text-foreground">{value}</dd>
         </div>
       ))}
     </dl>
@@ -272,17 +274,28 @@ function Chat({
                 }
                 if (part.type === "data-approval-request") {
                   return (
-                    <div
+                    <section
                       key={`${message.id}-${i}-${j}`}
-                      className="my-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+                      aria-label="Kubernetes approval request"
+                      className="my-4 overflow-hidden rounded-xl border border-amber-500/40 bg-amber-500/5 shadow-sm"
                     >
-                      <div className="font-medium">Approval required</div>
-                      <div className="mt-1 text-muted-foreground">
-                        {part.data.summary}
+                      <div className="flex items-start gap-3 border-b border-amber-500/20 bg-amber-500/10 px-4 py-3">
+                        <div className="mt-0.5 rounded-md bg-amber-500/15 p-1.5 text-amber-700 dark:text-amber-300">
+                          <ShieldAlert className="size-4" aria-hidden="true" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="font-medium text-foreground">Approval required</h3>
+                          <p className="mt-0.5 text-sm text-muted-foreground">{part.data.summary}</p>
+                        </div>
+                        <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-500/30 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                          <Clock3 className="size-3" aria-hidden="true" />
+                          {part.data.status === "pending" ? "Needs review" : part.data.status}
+                        </span>
                       </div>
-                      <ApprovalDetails data={part.data} />
+                      <div className="px-4 py-3">
+                        <ApprovalDetails data={part.data} />
                       {part.data.status === "pending" ? (
-                        <div className="mt-3 flex gap-2">
+                        <div className="mt-4 flex flex-wrap gap-2">
                           <Button
                             size="sm"
                             disabled={approvingId === part.data.approvalId}
@@ -293,7 +306,7 @@ function Chat({
                             {approvingId === part.data.approvalId && (
                               <Spinner data-icon="inline-start" />
                             )}
-                            Approve change
+                            Approve and apply
                           </Button>
                           <Button
                             size="sm"
@@ -303,15 +316,29 @@ function Chat({
                               void handleApproval(part.data.approvalId, false)
                             }
                           >
-                            Reject
+                            Reject change
                           </Button>
                         </div>
                       ) : (
-                        <div className="mt-2 text-xs text-muted-foreground uppercase">
-                          {part.data.status}
+                        <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                          {part.data.status === "approved" ? (
+                            <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
+                          ) : part.data.status === "failed" ? (
+                            <CircleAlert className="size-4 text-destructive" />
+                          ) : (
+                            <XCircle className="size-4" />
+                          )}
+                          <span>
+                            {part.data.status === "approved"
+                              ? "Applied and verified"
+                              : part.data.status === "failed"
+                                ? "Application or verification failed"
+                                : "Change rejected"}
+                          </span>
                         </div>
                       )}
-                    </div>
+                      </div>
+                    </section>
                   )
                 }
                 if (part.type === "data-approval-result") {
