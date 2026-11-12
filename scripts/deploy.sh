@@ -103,7 +103,10 @@ else
   # Dev mode: the base overlay ships this placeholder; the build is tagged
   # with IMAGE and the rendered output is rewritten to match.
   TEMPLATE_IMAGE="kubernetes-agent:local"
-  IMAGE="${IMAGE:-kubernetes-agent:dev}"
+  # A fresh tag prevents a local Docker Desktop cluster from reusing an old
+  # image when the same development tag is rebuilt with imagePullPolicy
+  # IfNotPresent.
+  IMAGE="${IMAGE:-kubernetes-agent:dev-$(date +%Y%m%d%H%M%S)}"
   OVERLAY_DIR="$ROOT_DIR/k8s"
   LOAD_IMAGE="${LOAD_IMAGE:-ask}"
   PUSH_IMAGE="${PUSH_IMAGE:-no}"
@@ -239,8 +242,9 @@ if ! kubectl -n "$NAMESPACE" wait --for=condition=complete job/kubernetes-agent-
 fi
 
 printf 'Waiting for application rollout...\n'
-kubectl -n "$NAMESPACE" rollout status deployment/kubernetes-agent --timeout=180s
+kubectl -n "$NAMESPACE" rollout status deployment/kubernetes-agent-runner --timeout=180s
+kubectl -n "$NAMESPACE" rollout status deployment/kubernetes-agent-web --timeout=180s
 
 printf '\nDeployment complete.\n'
-printf 'Service: kubernetes-agent.%s.svc.cluster.local:3000\n' "$NAMESPACE"
-printf 'Local access: kubectl -n %s port-forward svc/kubernetes-agent 3000:3000\n' "$NAMESPACE"
+printf 'Service: kubernetes-agent-web.%s.svc.cluster.local:3000\n' "$NAMESPACE"
+printf 'Local access: kubectl -n %s port-forward svc/kubernetes-agent-web 3000:3000\n' "$NAMESPACE"
