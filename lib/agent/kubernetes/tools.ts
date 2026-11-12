@@ -9,7 +9,7 @@ import {
   removeDeploymentNodeSelectorInputSchema,
 } from "@/lib/agent/kubernetes/proposals"
 
-const MAX_TOOL_OUTPUT_CHARS = 8000
+const MAX_TOOL_OUTPUT_CHARS = 6000
 
 function serializeToolOutput(value: unknown) {
   const json = JSON.stringify(value)
@@ -65,15 +65,30 @@ export const listEventsTool = tool(
     const { core } = getKubernetesClients()
     const response = await core.listNamespacedEvent({ namespace })
 
+    const events = response.items
+      .toSorted(
+        (a, b) =>
+          new Date(String(b.lastTimestamp ?? b.eventTime ?? 0)).getTime() -
+          new Date(String(a.lastTimestamp ?? a.eventTime ?? 0)).getTime()
+      )
+      .slice(0, 12)
+
     return serializeToolOutput(
-      response.items.map((event) => ({
+      events.map((event) => ({
         type: event.type,
         reason: event.reason,
-        message: event.message,
+        message:
+          typeof event.message === "string"
+            ? event.message.slice(0, 240)
+            : event.message,
         count: event.count,
         firstTimestamp: event.firstTimestamp,
         lastTimestamp: event.lastTimestamp,
-        involvedObject: event.involvedObject,
+        involvedObject: {
+          kind: event.involvedObject?.kind,
+          name: event.involvedObject?.name,
+          namespace: event.involvedObject?.namespace,
+        },
       }))
     )
   },
@@ -404,6 +419,32 @@ export const labelNodeTool = tool(
 
 export const removeDeploymentNodeSelectorTool = tool(
   async ({ namespace, deployment }): Promise<string> => {
+    const { apps } = getKubernetesClients()
+    try {
+      const current = await apps.readNamespacedDeployment({
+        name: deployment,
+        namespace,
+      })
+      if (!current.spec?.template?.spec?.nodeSelector) {
+        return JSON.stringify({
+          kind: "proposal_unavailable",
+          reason: `Deployment ${namespace}/${deployment} exists but has no nodeSelector to remove.`,
+        })
+      }
+    } catch (error) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? (error as { code?: unknown }).code
+          : undefined
+      if (code === 404) {
+        return JSON.stringify({
+          kind: "proposal_unavailable",
+          reason: `${namespace}/${deployment} is not a Deployment. Inspect the Pod and use recreate_pod_without_node_selector for an unmanaged standalone pod.`,
+        })
+      }
+      throw error
+    }
+
     const proposal: ActionProposal = {
       action: "remove_deployment_node_selector",
       summary: `Remove the nodeSelector from deployment ${namespace}/${deployment}`,
@@ -414,7 +455,7 @@ export const removeDeploymentNodeSelectorTool = tool(
   {
     name: "remove_deployment_node_selector",
     description:
-      "Prepare a proposal to remove a Deployment pod template nodeSelector. This only creates a proposal; it never changes the cluster. The user must approve it before execution.",
+      "Prepare a proposal to remove a Deployment pod template nodeSelector. Only call this after get_deployment confirms that the target is an existing Deployment with a nodeSelector. For an unmanaged standalone Pod, call recreate_pod_without_node_selector instead. This only creates a proposal; it never changes the cluster. The user must approve it before execution.",
     schema: removeDeploymentNodeSelectorInputSchema,
   }
 )
