@@ -1,8 +1,33 @@
-# agent tooling (not needed in the build)
-.claude
-.agents
-.env*
-.next
-node_modules
-source
+# VCS and CI metadata
 .git
+.github
+
+# Dependencies and build output (rebuilt inside the image)
+node_modules
+.next
+out
+tsconfig.tsbuildinfo
+
+# Agent tooling and editor config
+.agents
+.claude
+.opencode
+.prettierrc
+.prettierignore
+
+# Deploy manifests and helper scripts (not needed to build the app)
+k8s
+scripts
+docs
+
+# Environment files and local secrets
+.env*
+
+# Repo docs and packaging metadata
+*.md
+LICENSE
+skills-lock.json
+
+# Docker build files
+Dockerfile
+.dockerignore
