@@ -503,12 +503,18 @@ export async function POST(request: Request) {
           .find((message) => message instanceof AIMessage) as
           | AIMessage
           | undefined
-        const text =
+        let text =
           lastAssistant && typeof lastAssistant.content === "string"
             ? lastAssistant.content
             : ""
 
-        const assistantMessage: ChatUIMessage = {
+        // The approval card is the only approval request. Do not duplicate
+        // the model's prose asking the user to approve the same proposal.
+        if (approval) {
+          text = "Review the approval card below to authorize this change."
+        }
+
+      const assistantMessage: ChatUIMessage = {
           id: assistantMessageId,
           role: "assistant",
           metadata: { botId: bot.id, workflow: [...workflow] },

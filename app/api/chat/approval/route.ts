@@ -7,6 +7,7 @@ import { applyKubernetesAction } from "@/lib/agent/kubernetes/actions"
 import { actionProposalSchema } from "@/lib/agent/kubernetes/proposals"
 import type { ApprovalResult, ChatUIMessage } from "@/lib/chat-types"
 import { saveMessages } from "@/lib/chat/persistence"
+import { summarizeVerifiedAction } from "@/lib/agent/summary"
 import { isRunner, proxyToRunner } from "@/lib/runner"
 import { MAX_CHAT_BODY_BYTES, rateLimit } from "@/lib/rate-limit"
 import { INTERNAL_USER_ID } from "@/lib/internal-user"
@@ -149,7 +150,7 @@ export async function POST(request: Request) {
         status: "approved",
         result: actionResult,
       }
-      text = `Approved and applied: ${proposal.summary}\n\nVerification data: ${JSON.stringify(actionResult)}`
+      text = await summarizeVerifiedAction(proposal, actionResult)
     } catch (error) {
       const errorText = error instanceof Error ? error.message : String(error)
       await db
