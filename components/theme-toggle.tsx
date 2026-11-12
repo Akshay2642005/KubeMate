@@ -28,8 +28,11 @@ function ThemeToggle() {
   // The server always renders the "system" icon, but the client's first
   // render may read a different persisted theme from localStorage. Render the
   // stable system icon until mounted so server and client HTML match.
-  const [mounted, setMounted] = React.useState(false)
-  React.useEffect(() => setMounted(true), [])
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
   const CurrentIcon = !mounted
     ? MonitorIcon
     : (options.find((option) => option.value === theme)?.icon ??
