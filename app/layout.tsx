@@ -25,23 +25,9 @@ const fontMono = Geist_Mono({
 })
 
 // Restores the persisted theme before first paint so a dark-mode user never
-// sees a flash of the light theme (and vice versa) on refresh. Keep in sync
-// with the class contract used by ThemeProvider (.light/.dark on <html>).
-const themeInitScript = `(function () {
-  try {
-    var stored = window.localStorage.getItem("theme")
-    var theme = stored === "light" || stored === "dark" || stored === "system" ? stored : "system"
-    var dark =
-      theme === "dark" ||
-      (theme === "system" &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches)
-    var root = document.documentElement
-    root.classList.remove("light", "dark")
-    root.classList.add(dark ? "dark" : "light")
-    root.style.colorScheme = dark ? "dark" : "light"
-  } catch {}
-})()`
-
+// sees a flash of the light theme (and vice versa) on refresh. Kept in
+// public/theme-init.js (loaded as a classic beforeInteractive script) rather
+// than inline so React never renders the <script> element itself.
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -59,11 +45,8 @@ export default function RootLayout({
       )}
     >
       <body>
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: themeInitScript }}
-        />
+        {/* Restores the persisted theme before first paint; see comment above. */}
+        <Script src="/theme-init.js" strategy="beforeInteractive" />
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster />

@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
 
 import { useTheme } from "@/components/theme-provider"
@@ -24,9 +25,15 @@ const options = [
 // for quick toggling between light and dark.
 function ThemeToggle() {
   const { theme, resolvedTheme, setTheme } = useTheme()
-  const CurrentIcon =
-    options.find((option) => option.value === theme)?.icon ??
-    (resolvedTheme === "dark" ? MoonIcon : SunIcon)
+  // The server always renders the "system" icon, but the client's first
+  // render may read a different persisted theme from localStorage. Render the
+  // stable system icon until mounted so server and client HTML match.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => setMounted(true), [])
+  const CurrentIcon = !mounted
+    ? MonitorIcon
+    : (options.find((option) => option.value === theme)?.icon ??
+      (resolvedTheme === "dark" ? MoonIcon : SunIcon))
 
   return (
     <DropdownMenu>
