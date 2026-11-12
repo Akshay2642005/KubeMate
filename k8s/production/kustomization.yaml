@@ -8,4 +8,4 @@ images:
   # The release workflow updates this image reference when a version tag is published.
   - name: kubernetes-agent:local
     newName: ghcr.io/akshay2642005/kubemate
-    newTag: 1/merge
+    newTag: 0.1.1
