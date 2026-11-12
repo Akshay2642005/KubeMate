@@ -4,7 +4,7 @@
 
 Build one full stack TypeScript application from the existing `ai-teammates` project.
 
-The application will provide specialized Kubernetes teammates that users can chat with individually or as a group. Each teammate will have its own avatar, role, system instructions, model configuration, workflow, and allowed tools.
+The application will provide specialized Kubernetes teammates that users can chat with individually or as a group. Each teammate is a profile: an avatar, a job description, system instructions, and an approval-gated toolset. Model selection is environment-wide (OpenRouter, Groq, or NVIDIA endpoints), not per teammate.
 
 The existing Kubernetes diagnosis and remediation workflow from `ai-agent` will be migrated from Python into TypeScript using LangChain and LangGraph. The existing sandbox infrastructure will remain optional and will be added only when the product needs to execute untrusted code.
 
@@ -16,7 +16,7 @@ Users can:
 2. Ask the teammate to inspect a cluster or namespace.
 3. See streamed reasoning summaries, tool activity, findings, and proposed changes.
 4. Approve or reject every write operation.
-5. Let a teammate hand the conversation to another specialist.
+5. Ask a specialist a question directly, or @mention one in a group chat — the first mentioned teammate answers the turn.
 6. Review the resulting Kubernetes changes and verification results.
 
 The initial built in teammates are:
@@ -27,7 +27,6 @@ The initial built in teammates are:
 | Deployment Engineer | Inspect and safely change Deployments, images, rollouts, and replicas |
 | Manifest Engineer | Generate, validate, compare, and explain Kubernetes manifests |
 | Optimization Advisor | Review requests, limits, HPA, utilization, and scheduling efficiency |
-| Security Advisor | Review RBAC, service accounts, network policies, and workload exposure |
 
 ## Application architecture
 
@@ -79,25 +78,27 @@ MCP can be added later as an adapter for external clusters, third party tools, o
 
 ## Teammate data model
 
-The existing `bots` table from `ai-teammates` should evolve into a teammate profile with these fields:
+Teammates are rows in the `bots` table (`db/tables.ts`):
 
 - `id`
-- `userId`
+- `userId` — stable internal owner key (`internal`)
 - `name`
-- `slug`
-- `avatar`
-- `specialization`
-- `systemPrompt`
-- `workflowType`
-- `modelProvider`
-- `modelName`
-- `toolPolicy`
-- `approvalPolicy`
-- `clusterScope`
-- `namespaceScope`
+- `avatar` — seed for the bot's face
+- `profileId` — `teammate_profile_id` enum: `troubleshooting`, `deployment`,
+  `manifest`, `optimization`, or `custom`
+- `job` — what the teammate is for, in a phrase
+- `instructions` — optional extra system instructions
 - `createdAt`
 
-Chat membership remains separate from teammate identity. A group chat can contain several specialists, and handoff remains an explicit graph or tool operation.
+Built-in behavior comes from `lib/teammate-profiles.ts`: each built-in profile
+supplies the default job and system instructions shown to the model. `custom`
+teammates carry their own `job` and `instructions`. There are no per-teammate
+model, tool, or approval policy columns: model selection is environment-wide,
+the tool surface is fixed in the runner, and every mutating action goes through
+the same approval-proposal mechanism regardless of teammate.
+
+Chat membership remains separate from teammate identity. A group chat can contain
+several specialists, and a message is answered by the first @mentioned teammate.
 
 ## Agent workflow
 

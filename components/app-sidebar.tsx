@@ -8,6 +8,7 @@ import { SearchCommand, SearchCommandItem } from "@/components/search-command"
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -15,6 +16,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { ThemeToggle } from "@/components/theme-toggle"
 import { getBots, getChats, type ChatWithBots } from "@/queries/bots"
 
 // A group shows its bots together, a direct chat shows its one bot
@@ -62,14 +64,14 @@ export async function AppSidebar() {
                     tooltip={chat.name ?? chat.bots[0].name}
                   >
                     <SidebarChatAvatar chat={chat} />
-                    <div className="grid flex-1 text-left leading-tight">
+                    <div className="grid min-w-0 flex-1 text-left leading-tight">
                       <div className="flex items-baseline gap-2">
                         <span className="truncate font-medium">
                           {chat.name ?? chat.bots[0].name}
                         </span>
                         <time
                           dateTime={chat.lastMessageAt.toISOString()}
-                          className="ml-auto shrink-0 text-xs text-muted-foreground"
+                          className="ml-auto max-w-28 shrink-0 truncate text-xs tabular-nums text-muted-foreground"
                         >
                           {formatDistanceToNowStrict(chat.lastMessageAt)}
                         </time>
@@ -87,6 +89,9 @@ export async function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <ThemeToggle />
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

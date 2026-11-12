@@ -6,6 +6,7 @@ type Theme = "light" | "dark" | "system"
 type ResolvedTheme = Exclude<Theme, "system">
 
 type ThemeContextValue = {
+  theme: Theme
   resolvedTheme: ResolvedTheme
   setTheme: (theme: Theme) => void
 }
@@ -84,8 +85,8 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [resolvedTheme, theme])
 
   const value = React.useMemo(
-    () => ({ resolvedTheme, setTheme }),
-    [resolvedTheme, setTheme]
+    () => ({ theme, resolvedTheme, setTheme }),
+    [theme, resolvedTheme, setTheme]
   )
 
   return (

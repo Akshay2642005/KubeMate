@@ -1,6 +1,6 @@
 "use server"
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, exists, inArray, not } from "drizzle-orm"
 import { nanoid } from "nanoid"
 import { revalidatePath } from "next/cache"
 
@@ -87,6 +87,25 @@ export async function deleteBot(botId: string) {
       .where(and(eq(bots.id, botId), eq(bots.userId, INTERNAL_USER_ID)))
       .returning({ id: bots.id })
     if (!bot) throw new Error("Bot not found")
+
+    // Deleting the bot cascades its memberships, which can empty a group
+    // chat. Drop those orphaned rows so they don't linger forever.
+    await tx
+      .delete(chats)
+      .where(
+        and(
+          eq(chats.userId, INTERNAL_USER_ID),
+          eq(chats.kind, "group"),
+          not(
+            exists(
+              tx
+                .select({ id: chatMembers.chatId })
+                .from(chatMembers)
+                .where(eq(chatMembers.chatId, chats.id))
+            )
+          )
+        )
+      )
   })
 
   revalidatePath("/", "layout")

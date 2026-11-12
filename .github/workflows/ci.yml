@@ -23,10 +23,7 @@ jobs:
           bun-version: 1.4.3
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - name: Lint (advisory)
-        # Existing React 19 starter components currently fail these rules.
-        continue-on-error: true
-        run: bun run lint
+      - run: bun run lint
       - run: bun run build
 
   publish:

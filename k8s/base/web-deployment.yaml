@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubernetes-agent-web
+  labels:
+    app.kubernetes.io/name: kubernetes-agent
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubernetes-agent
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubernetes-agent
+        app.kubernetes.io/component: web
+    spec:
+      # No ServiceAccount token: the web tier never reaches the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # Matches the `bun` user (UID 1000) baked into the runtime image.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: kubernetes-agent:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: NEXT_PRIVATE_MINIMAL_MODE
+              value: "1"
+            # Runs as the web tier: it forwards agent calls to the runner
+            # instead of executing them, and it has no ServiceAccount token.
+            - name: KUBERNETES_AGENT_ROLE
+              value: "web"
+            - name: INTERNAL_RUNNER_URL
+              value: "http://kubernetes-agent-runner:3000"
+            - name: DATABASE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_USER
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-agent-secrets
+                  key: DATABASE_PASSWORD
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_HOST
+            - name: DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_PORT
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_NAME
+            - name: DATABASE_URL
+              value: postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)
+            - name: AI_PROVIDER
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: AI_PROVIDER
+            - name: GROQ__MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: AI_MODEL
+            - name: NVIDIA__CHAT_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: AI_MODEL
+            - name: OPENROUTER__MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: AI_MODEL
+            - name: GROQ__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-agent-secrets
+                  key: AI_API_KEY
+            - name: NVIDIA__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-agent-secrets
+                  key: AI_API_KEY
+            - name: OPENROUTER__API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-agent-secrets
+                  key: AI_API_KEY
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            # Next writes its incremental/revalidation cache here; the root
+            # filesystem is read-only.
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}

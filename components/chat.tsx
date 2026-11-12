@@ -1,10 +1,11 @@
 "use client"
 
-import { useChat } from "@ai-sdk/react"
-import { DefaultChatTransport } from "ai"
-import { useState, type KeyboardEvent } from "react"
+import { ArrowUp, CircleAlert, Square } from "lucide-react"
+import { useState, type FormEvent, type KeyboardEvent } from "react"
 
 import { ChatAvatar } from "@/components/chat-avatar"
+import { ChatToolCall } from "@/components/chat-tool-call"
+import { LiveWorkflowSteps, WorkflowSteps } from "@/components/workflow-steps"
 import {
   Conversation,
   ConversationContent,
@@ -15,17 +16,13 @@ import {
   MessageContent,
   MessageResponse,
 } from "@/components/ai-elements/message"
-import {
-  PromptInput,
-  PromptInputFooter,
-  type PromptInputMessage,
-  PromptInputSubmit,
-  PromptInputTextarea,
-} from "@/components/ai-elements/prompt-input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { Bot } from "@/db/schema"
-import type { ChatUIMessage } from "@/lib/chat-types"
+import type { ApprovalRequest, ChatUIMessage } from "@/lib/chat-types"
+import { useAgentChat } from "@/lib/use-agent-chat"
+import { Spinner } from "@/components/ui/spinner"
+import { toast } from "@/components/ui/toast"
 
 type ChatBot = Pick<Bot, "id" | "name" | "avatar">
 
@@ -37,8 +34,6 @@ function findMentionedBots(text: string, bots: ChatBot[]) {
     .map((bot) => bot.id)
 }
 
-// A group chat passes bots so assistant messages can be shown with the selected
-// teammate's face.
 function splitByAuthor(message: ChatUIMessage, bots: ChatBot[]) {
   const findBot = (botId?: string) => bots.find((bot) => bot.id === botId)
 
@@ -58,27 +53,32 @@ function splitByAuthor(message: ChatUIMessage, bots: ChatBot[]) {
   return sections
 }
 
-// `bots` are a group chat's members to pick from; a direct chat passes none
-function Chat({
-  chatId,
-  initialMessages,
-  bots,
-}: {
-  chatId: string
-  initialMessages: ChatUIMessage[]
-  bots?: ChatBot[]
-}) {
+// Shows the exact target and change behind an approval, not just the model's
+// prose summary, so a reviewer can see what will actually run.
+function ApprovalDetails({ data }: { data: ApprovalRequest }) {
+  const input = data.input
+  const rows: [string, string][] = [["Action", data.action]]
+
+  if ("namespace" in input) rows.push(["Namespace", input.namespace])
+  if ("node" in input) rows.push(["Node", input.node])
+  if ("deployment" in input) rows.push(["Deployment", input.deployment])
+  if ("pod" in input) rows.push(["Pod", input.pod])
+  if ("key" in input) rows.push(["Label key", input.key])
+  if ("value" in input) rows.push(["Label value", input.value])
+
   return (
-    <ChatMessages
-      key={chatId}
-      chatId={chatId}
-      initialMessages={initialMessages}
-      bots={bots}
-    />
+    <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+      {rows.map(([label, value]) => (
+        <div key={label} className="contents">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="truncate font-mono">{value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
-function ChatMessages({
+function Chat({
   chatId,
   initialMessages,
   bots = [],
@@ -87,15 +87,22 @@ function ChatMessages({
   initialMessages: ChatUIMessage[]
   bots?: ChatBot[]
 }) {
-  const { messages, sendMessage, setMessages, status, stop } =
-    useChat<ChatUIMessage>({
-      id: chatId,
-      messages: initialMessages,
-      transport: new DefaultChatTransport({ api: "/api/chat" }),
-    })
+  const {
+    messages,
+    setMessages,
+    status,
+    error,
+    steps,
+    sendMessage,
+    stop,
+    retry,
+  } = useAgentChat({ chatId, initialMessages })
   const [composerText, setComposerText] = useState("")
   const [mentionIndex, setMentionIndex] = useState(0)
   const [mentionError, setMentionError] = useState<string>()
+  const [approvingId, setApprovingId] = useState<string>()
+
+  const busy = status === "submitted" || status === "streaming"
 
   const mentionStart = (() => {
     const at = composerText.lastIndexOf("@")
@@ -113,9 +120,16 @@ function ChatMessages({
         )
       : []
 
-  function handleSubmit(message: PromptInputMessage) {
-    if (!message.text.trim()) return
-    const mentionedBotIds = findMentionedBots(message.text, bots)
+  function chooseMention(bot: ChatBot) {
+    if (mentionStart < 0) return
+    setComposerText(`${composerText.slice(0, mentionStart)}@${bot.name} `)
+    setMentionIndex(0)
+  }
+
+  function submit() {
+    const text = composerText.trim()
+    if (!text) return
+    const mentionedBotIds = findMentionedBots(text, bots)
     if (bots.length > 1 && mentionedBotIds.length === 0) {
       setMentionError("Mention a teammate with @ before sending.")
       return
@@ -124,62 +138,100 @@ function ChatMessages({
     const metadata = targetBotId
       ? { botId: targetBotId, mentionedBotIds }
       : undefined
-    sendMessage({ text: message.text, metadata }, { metadata })
+    void sendMessage({ text, metadata })
     setComposerText("")
     setMentionIndex(0)
     setMentionError(undefined)
   }
 
-  function chooseMention(bot: ChatBot) {
-    if (mentionStart < 0) return
-    setComposerText(`${composerText.slice(0, mentionStart)}@${bot.name} `)
-    setMentionIndex(0)
-  }
-
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (mentionStart < 0 || mentionSuggestions.length === 0) return
-    if (event.key === "ArrowDown") {
-      event.preventDefault()
-      setMentionIndex((index) => (index + 1) % mentionSuggestions.length)
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault()
-      setMentionIndex(
-        (index) =>
-          (index - 1 + mentionSuggestions.length) % mentionSuggestions.length
-      )
-    } else if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault()
-      chooseMention(mentionSuggestions[mentionIndex])
-    } else if (event.key === "Escape") {
-      event.preventDefault()
-      setComposerText(composerText.slice(0, mentionStart))
-    }
+  function handleComposerSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    submit()
   }
 
   async function handleApproval(approvalId: string, approved: boolean) {
-    const response = await fetch("/api/chat/approval", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chatId, approvalId, approved }),
-    })
-    if (!response.ok) return
-    const body = (await response.json()) as { message: ChatUIMessage }
-    const result = body.message.parts.find(
-      (part) => part.type === "data-approval-result"
-    )
-    setMessages((current) => [
-      ...current.map((message) => ({
-        ...message,
-        parts: message.parts.map((part) =>
-          part.type === "data-approval-request" &&
-          result?.type === "data-approval-result" &&
-          part.data.approvalId === result.data.approvalId
-            ? { ...part, data: { ...part.data, status: result.data.status } }
-            : part
-        ),
-      })),
-      body.message,
-    ])
+    if (approvingId) return
+    setApprovingId(approvalId)
+
+    try {
+      const response = await fetch("/api/chat/approval", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ chatId, approvalId, approved }),
+      })
+      if (!response.ok) {
+        const text = await response.text().catch(() => "")
+        toast.add({
+          type: "error",
+          title: approved
+            ? "Couldn't apply the change"
+            : "Couldn't reject the change",
+          description: text || "Something went wrong. Try again.",
+        })
+        return
+      }
+
+      const body = (await response.json()) as { message: ChatUIMessage }
+      const result = body.message.parts.find(
+        (part) => part.type === "data-approval-result"
+      )
+      setMessages((current) => [
+        ...current.map((message) => ({
+          ...message,
+          parts: message.parts.map((part) =>
+            part.type === "data-approval-request" &&
+            result?.type === "data-approval-result" &&
+            part.data.approvalId === result.data.approvalId
+              ? { ...part, data: { ...part.data, status: result.data.status } }
+              : part
+          ),
+        })),
+        body.message,
+      ])
+    } catch {
+      toast.add({
+        type: "error",
+        title: approved
+          ? "Couldn't apply the change"
+          : "Couldn't reject the change",
+        description: "The request could not be sent. Try again.",
+      })
+    } finally {
+      setApprovingId(undefined)
+    }
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionStart >= 0 && mentionSuggestions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault()
+        setMentionIndex((index) => (index + 1) % mentionSuggestions.length)
+        return
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault()
+        setMentionIndex(
+          (index) =>
+            (index - 1 + mentionSuggestions.length) % mentionSuggestions.length
+        )
+        return
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault()
+        chooseMention(mentionSuggestions[mentionIndex])
+        return
+      }
+      if (event.key === "Escape") {
+        event.preventDefault()
+        setComposerText(composerText.slice(0, mentionStart))
+        return
+      }
+    }
+
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault()
+      submit()
+    }
   }
 
   return (
@@ -187,11 +239,14 @@ function ChatMessages({
       <Conversation>
         <ConversationContent className="mx-auto w-full max-w-3xl">
           {messages.flatMap((message) => {
-            // The bot a group chat's message was sent to
+            // The bot a group chat's message was sent to; in a direct
+            // chat the tag would just repeat the chat header
             const addressee =
-              message.role === "user"
+              bots.length > 1 && message.role === "user"
                 ? bots.find((bot) => bot.id === message.metadata?.botId)
                 : undefined
+            const workflow =
+              message.role === "assistant" ? message.metadata?.workflow : undefined
 
             return splitByAuthor(message, bots).map(({ author, parts }, i) => {
               const renderedParts = parts.map((part, j) => {
@@ -212,27 +267,7 @@ function ChatMessages({
                 }
                 if (part.type === "data-tool-log") {
                   return (
-                    <details
-                      key={`${message.id}-${i}-${j}`}
-                      className="my-2 rounded-md border bg-muted/30 text-xs"
-                    >
-                      <summary className="cursor-pointer px-3 py-2 font-medium text-muted-foreground">
-                        {part.data.error
-                          ? `Tool failed: ${part.data.tool}`
-                          : `Tool: ${part.data.tool}`}
-                      </summary>
-                      <pre className="max-h-72 overflow-auto border-t p-3 whitespace-pre-wrap text-muted-foreground">
-                        {JSON.stringify(
-                          {
-                            input: part.data.input,
-                            output: part.data.output,
-                            error: part.data.error,
-                          },
-                          null,
-                          2
-                        )}
-                      </pre>
-                    </details>
+                    <ChatToolCall key={`${message.id}-${i}-${j}`} log={part.data} />
                   )
                 }
                 if (part.type === "data-approval-request") {
@@ -245,19 +280,25 @@ function ChatMessages({
                       <div className="mt-1 text-muted-foreground">
                         {part.data.summary}
                       </div>
+                      <ApprovalDetails data={part.data} />
                       {part.data.status === "pending" ? (
                         <div className="mt-3 flex gap-2">
                           <Button
                             size="sm"
+                            disabled={approvingId === part.data.approvalId}
                             onClick={() =>
                               void handleApproval(part.data.approvalId, true)
                             }
                           >
+                            {approvingId === part.data.approvalId && (
+                              <Spinner data-icon="inline-start" />
+                            )}
                             Approve change
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
+                            disabled={approvingId === part.data.approvalId}
                             onClick={() =>
                               void handleApproval(part.data.approvalId, false)
                             }
@@ -289,6 +330,7 @@ function ChatMessages({
                     <ChatAvatar seed={author.avatar} className="size-6" />
                   )}
                   <MessageContent>
+                    {workflow ? <WorkflowSteps steps={workflow} /> : null}
                     {addressee ? (
                       // One block, so the tag and the text share a line and the text wraps under it
                       <div>
@@ -317,7 +359,7 @@ function ChatMessages({
       </Conversation>
       <div className="relative mx-auto w-full max-w-3xl p-4 pt-0">
         {mentionSuggestions.length > 0 && (
-          <div className="absolute inset-x-4 bottom-full mb-2 overflow-hidden rounded-lg border bg-popover p-1 shadow-lg">
+          <div className="absolute inset-x-4 bottom-full z-10 mb-2 overflow-hidden rounded-lg border bg-popover p-1 shadow-lg">
             {mentionSuggestions.map((bot, index) => (
               <button
                 key={bot.id}
@@ -334,27 +376,67 @@ function ChatMessages({
             ))}
           </div>
         )}
-        {mentionError && (
+        {status === "error" && error ? (
+          <div
+            role="alert"
+            className="mb-2 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            <CircleAlert className="size-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1">{error}</span>
+            <button
+              type="button"
+              onClick={retry}
+              className="shrink-0 font-medium underline underline-offset-2 hover:no-underline"
+            >
+              Try again
+            </button>
+          </div>
+        ) : mentionError ? (
           <div className="mb-2 text-xs text-destructive">{mentionError}</div>
-        )}
-        <PromptInput onSubmit={handleSubmit}>
-          <PromptInputTextarea
+        ) : null}
+        <LiveWorkflowSteps status={status} steps={steps} />
+        <form
+          onSubmit={handleComposerSubmit}
+          className="flex items-end gap-2 rounded-2xl border bg-background p-2 transition-colors focus-within:border-ring"
+        >
+          <textarea
             value={composerText}
             onChange={(event) => {
               setComposerText(event.currentTarget.value)
               setMentionIndex(0)
             }}
-            onKeyDownCapture={handleComposerKeyDown}
+            onKeyDown={handleComposerKeyDown}
+            rows={1}
             placeholder={
               bots.length > 1
-                ? "Send a message or mention a teammate with @..."
-                : "Send a message..."
+                ? "Message with @ — the first mentioned teammate replies"
+                : `Message ${bots[0]?.name ?? "your teammate"}…`
             }
+            aria-label="Message"
+            className="field-sizing-content max-h-40 min-h-6 w-full resize-none overflow-y-auto border-0 bg-transparent px-2 py-1 text-sm outline-none placeholder:text-muted-foreground"
           />
-          <PromptInputFooter className="justify-end">
-            <PromptInputSubmit status={status} onStop={stop} />
-          </PromptInputFooter>
-        </PromptInput>
+          {busy ? (
+            <button
+              type="button"
+              onClick={stop}
+              aria-label="Stop generating"
+              title="Stop generating"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85"
+            >
+              <Square className="size-3 fill-current" aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!composerText.trim()}
+              aria-label="Send message"
+              title="Send message"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-30"
+            >
+              <ArrowUp className="size-4" aria-hidden="true" />
+            </button>
+          )}
+        </form>
       </div>
     </div>
   )

@@ -26,25 +26,10 @@ export const AgentState = Annotation.Root({
     reducer: replaceValue,
     default: () => undefined,
   }),
-  namespace: Annotation<string | undefined>({
+  // How many model -> tools round trips have run for this invocation.
+  toolTurns: Annotation<number>({
     reducer: replaceValue,
-    default: () => undefined,
-  }),
-  intent: Annotation<"inspect" | "plan" | "change">({
-    reducer: replaceValue,
-    default: () => "inspect",
-  }),
-  awaitingApproval: Annotation<boolean>({
-    reducer: replaceValue,
-    default: () => false,
-  }),
-  lastToolName: Annotation<string | undefined>({
-    reducer: replaceValue,
-    default: () => undefined,
-  }),
-  lastToolResult: Annotation<string | undefined>({
-    reducer: replaceValue,
-    default: () => undefined,
+    default: () => 0,
   }),
   error: Annotation<string | undefined>({
     reducer: replaceValue,
