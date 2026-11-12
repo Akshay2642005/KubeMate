@@ -45,7 +45,7 @@ general-purpose chatbot an unbounded cluster credential.
 | Capability | What it does | Why it matters |
 |---|---|---|
 | Specialist teammates | Switch between troubleshooting, deployment, manifest, and optimization personas | The answer is shaped by the job, not a generic prompt |
-| Group chat | Bring multiple Kubernetes specialists into one conversation | Compare diagnosis, rollout, and security perspectives together |
+| Group chat | Bring multiple Kubernetes specialists into one conversation | Ask diagnosis, rollout, and manifest questions in one thread; the first @mentioned teammate answers |
 | Cluster inspection | Inspect pods, logs, events, deployments, services, and nodes | Ground recommendations in live cluster evidence |
 | Approval workflow | Convert supported mutations into reviewable proposals | No silent changes from an AI response |
 | Provider flexibility | Use OpenRouter, Groq, or NVIDIA model endpoints | Keep model choice aligned with your environment and policy |
@@ -69,6 +69,16 @@ The agent uses `@kubernetes/client-node` and in-cluster ServiceAccount
 credentials; application code does not shell out to `kubectl`. The manifest
 layer keeps the application, database, RBAC, and schema job explicit so the
 deployment boundary is visible and reviewable.
+
+Agent runs speak [AG-UI](https://docs.ag-ui.com) 1.0 end to end: the browser
+sends a `RunAgentInput` and the runner streams server-sent events
+(`RUN_STARTED`, `STEP_STARTED`/`STEP_FINISHED` per graph node,
+`TEXT_MESSAGE_*`, `TOOL_CALL_*`, `STATE_SNAPSHOT`, `RUN_FINISHED`). The final
+snapshot carries the tool logs, the minted approval request (if a proposal
+tool fired), the ordered workflow steps, and the id the assistant message is
+persisted with, so live and reloaded views render the same parts. Approvals
+stay durable in Postgres; no client-side tool execution or interrupt/resume
+loop is involved.
 
 ### Runtime components
 
@@ -182,12 +192,14 @@ download the repository or clone it before running the command.
 
 ### Deploy a local build
 
-[`scripts/dev-deploy.sh`](scripts/dev-deploy.sh) is the development counterpart.
-It builds the image with Docker, optionally loads it into a local `kind` or
-`minikube` cluster, and applies the base manifests from `k8s/`:
+[`scripts/deploy.sh --dev`](scripts/deploy.sh) builds the image with Docker and
+deploys that build to a development cluster. It applies the base manifests
+from `k8s/`, optionally loads the image into a local `kind` or `minikube`
+cluster, and prompts for the model provider, the API key, and the Postgres
+password, so no secrets are written to the repository:
 
 ```bash
-./scripts/dev-deploy.sh
+./scripts/deploy.sh --dev
 ```
 
 The script prompts for the Kubernetes context, the model provider, the API key,
@@ -211,7 +223,7 @@ The workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml
 
 The production overlay is [`k8s/production`](k8s/production), built on the
 shared [`k8s/base`](k8s/base) resources. The local build flow is available
-through [`scripts/dev-deploy.sh`](scripts/dev-deploy.sh).
+through `./scripts/deploy.sh --dev`.
 
 ## Repository layout
 

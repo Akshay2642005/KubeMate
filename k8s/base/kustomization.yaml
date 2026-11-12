@@ -11,6 +11,9 @@ resources:
   - writer-clusterrole.yaml
   - writer-clusterrolebinding.yaml
   - postgres.yaml
-  - deployment.yaml
+  - web-deployment.yaml
+  - runner-deployment.yaml
   - service.yaml
+  - runner-service.yaml
+  - networkpolicy.yaml
   - db-push-job.yaml

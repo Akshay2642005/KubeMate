@@ -14,11 +14,27 @@ spec:
     spec:
       automountServiceAccountToken: false
       restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: migrator
           image: kubernetes-agent:local
           imagePullPolicy: IfNotPresent
-          command: ["bun", "run", "db:push"]
+          # drizzle.config.ts resolves ./db relative to the working directory
+          workingDir: /opt/migrator
+          command:
+            [
+              "bun",
+              "/opt/migrator/node_modules/drizzle-kit/bin.cjs",
+              "push",
+              "--config",
+              "/opt/migrator/drizzle.config.ts",
+            ]
           env:
             - name: DATABASE_USER
               valueFrom:
@@ -47,6 +63,14 @@ spec:
                   key: DATABASE_NAME
             - name: DATABASE_URL
               value: postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               cpu: 50m
@@ -54,3 +78,6 @@ spec:
             limits:
               cpu: 250m
               memory: 256Mi
+      volumes:
+        - name: tmp
+          emptyDir: {}

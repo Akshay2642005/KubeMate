@@ -1,4 +1,5 @@
 import { PlusIcon } from "lucide-react"
+import { redirect } from "next/navigation"
 
 import { BotDialog } from "@/components/bot-dialog"
 import { ChatAvatar } from "@/components/chat-avatar"
@@ -10,8 +11,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { getChats } from "@/queries/bots"
 
 export default async function Page() {
+  // Returning users should land in their most recent conversation.
+  const [latestChat] = await getChats()
+  if (latestChat) redirect(`/chats/${latestChat.id}`)
+
   return (
     <div className="flex min-h-svh p-6">
       <Empty>

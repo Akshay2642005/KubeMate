@@ -47,7 +47,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { toast } from "@/components/ui/toast"
-import { groupChatInsertSchema, type Bot, type Chat } from "@/db/schema"
+import { groupChatInsertSchema, type Bot, type Chat } from "@/db/tables"
 
 type GroupChatBot = Pick<Bot, "id" | "name" | "avatar">
 type GroupChat = Pick<Chat, "id" | "name"> & { bots: Pick<Bot, "id">[] }

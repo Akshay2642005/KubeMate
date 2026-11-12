@@ -3,6 +3,11 @@ import { z } from "zod"
 
 import type { ActionProposal } from "@/lib/chat-types"
 import { getKubernetesClients } from "@/lib/agent/kubernetes/client"
+import {
+  labelNodeInputSchema,
+  recreatePodWithoutNodeSelectorInputSchema,
+  removeDeploymentNodeSelectorInputSchema,
+} from "@/lib/agent/kubernetes/proposals"
 
 const MAX_TOOL_OUTPUT_CHARS = 8000
 
@@ -248,6 +253,114 @@ export const getServiceTool = tool(
   }
 )
 
+// Ownership-chain read for a Deployment: its ReplicaSets, the pods they
+// manage (readiness and restarts included), and the Services whose selectors
+// route traffic to those pods. Answers "what does this workload own" and "why
+// is traffic not reaching my pods" without a mutation-capable tool.
+export const traceWorkloadTool = tool(
+  async ({ namespace, deployment }) => {
+    const { apps, core } = getKubernetesClients()
+    const item = await apps.readNamespacedDeployment({
+      name: deployment,
+      namespace,
+    })
+    const matchLabels = item.spec?.selector?.matchLabels ?? {}
+    const selectorString = Object.entries(matchLabels)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(",")
+
+    const [replicasets, pods, services] = await Promise.all([
+      selectorString
+        ? apps.listNamespacedReplicaSet({
+            namespace,
+            labelSelector: selectorString,
+            limit: 10,
+          })
+        : Promise.resolve({ items: [] }),
+      core.listNamespacedPod({
+        namespace,
+        labelSelector: selectorString || undefined,
+        limit: 50,
+      }),
+      core.listNamespacedService({ namespace, limit: 100 }),
+    ])
+
+    const podLabels = pods.items.map((pod) => pod.metadata?.labels ?? {})
+    const serviceMatches = services.items
+      .map((service) => {
+        const selector = service.spec?.selector ?? {}
+        const keys = Object.keys(selector)
+        const matchesPods =
+          keys.length > 0 &&
+          podLabels.some((labels) =>
+            keys.every((key) => labels[key] === selector[key])
+          )
+        return {
+          name: service.metadata?.name,
+          type: service.spec?.type,
+          clusterIP: service.spec?.clusterIP,
+          ports: service.spec?.ports?.map((port) => ({
+            name: port.name,
+            port: port.port,
+            targetPort: port.targetPort,
+            protocol: port.protocol,
+          })),
+          selector,
+          matchesPods,
+        }
+      })
+      .filter((service) => service.matchesPods)
+      .slice(0, 20)
+
+    return serializeToolOutput({
+      deployment: {
+        name: item.metadata?.name,
+        namespace: item.metadata?.namespace,
+        replicas: item.spec?.replicas,
+        readyReplicas: item.status?.readyReplicas,
+        availableReplicas: item.status?.availableReplicas,
+        updatedReplicas: item.status?.updatedReplicas,
+        strategy: item.spec?.strategy?.type,
+        selector: matchLabels,
+        nodeSelector: item.spec?.template?.spec?.nodeSelector,
+      },
+      replicasets: replicasets.items.map((replicaSet) => ({
+        name: replicaSet.metadata?.name,
+        replicas: replicaSet.spec?.replicas,
+        readyReplicas: replicaSet.status?.readyReplicas,
+      })),
+      pods: pods.items.map((pod) => {
+        const containerStatuses = pod.status?.containerStatuses ?? []
+        return {
+          name: pod.metadata?.name,
+          node: pod.spec?.nodeName,
+          phase: pod.status?.phase,
+          reason: pod.status?.reason,
+          restarts: containerStatuses.reduce(
+            (total, container) => total + (container.restartCount ?? 0),
+            0
+          ),
+          containersReady: containerStatuses.filter((container) => container.ready)
+            .length,
+          containersTotal: containerStatuses.length,
+        }
+      }),
+      services: serviceMatches,
+      podCount: pods.items.length,
+      truncated: pods.items.length >= 50,
+    })
+  },
+  {
+    name: "trace_workload",
+    description:
+      "Trace the ownership and routing chain for a Deployment: its ReplicaSets, the pods they manage (readiness, restarts, node), and the Services whose selectors route to those pods. Read-only. Use this for 'what does this deployment own', 'map this workload', or 'why is traffic not reaching my pods'.",
+    schema: z.object({
+      namespace: z.string().trim().min(1).default("default"),
+      deployment: z.string().trim().min(1),
+    }),
+  }
+)
+
 export const getNodeTool = tool(
   async ({ node }) => {
     const { core } = getKubernetesClients()
@@ -271,17 +384,6 @@ export const getNodeTool = tool(
     schema: z.object({ node: z.string().trim().min(1) }),
   }
 )
-
-const labelNodeInputSchema = z.object({
-  node: z.string().trim().min(1),
-  key: z
-    .string()
-    .trim()
-    .min(1)
-    .max(253)
-    .regex(/^[A-Za-z0-9][-A-Za-z0-9_.\/]*[A-Za-z0-9]$/),
-  value: z.string().trim().min(1).max(63),
-})
 
 export const labelNodeTool = tool(
   async (input): Promise<string> => {
@@ -313,10 +415,7 @@ export const removeDeploymentNodeSelectorTool = tool(
     name: "remove_deployment_node_selector",
     description:
       "Prepare a proposal to remove a Deployment pod template nodeSelector. This only creates a proposal; it never changes the cluster. The user must approve it before execution.",
-    schema: z.object({
-      namespace: namespaceSchema.shape.namespace,
-      deployment: z.string().trim().min(1),
-    }),
+    schema: removeDeploymentNodeSelectorInputSchema,
   }
 )
 
@@ -333,10 +432,7 @@ export const recreatePodWithoutNodeSelectorTool = tool(
     name: "recreate_pod_without_node_selector",
     description:
       "Prepare a proposal to recreate an unmanaged standalone pod without its nodeSelector. This is required because pod scheduling fields cannot be edited in place. This only creates a proposal; it never changes the cluster. The user must approve it before execution.",
-    schema: z.object({
-      namespace: namespaceSchema.shape.namespace,
-      pod: z.string().trim().min(1),
-    }),
+    schema: recreatePodWithoutNodeSelectorInputSchema,
   }
 )
 
@@ -349,6 +445,7 @@ export const readOnlyKubernetesTools = [
   getDeploymentTool,
   getServiceTool,
   getNodeTool,
+  traceWorkloadTool,
 ]
 
 export const kubernetesTools = [
