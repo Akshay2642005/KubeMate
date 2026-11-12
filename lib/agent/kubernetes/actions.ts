@@ -1,4 +1,4 @@
-import type { CoreV1Api } from "@kubernetes/client-node"
+import type { AppsV1Api, CoreV1Api } from "@kubernetes/client-node"
 
 import type { ActionProposal } from "@/lib/chat-types"
 import { getKubernetesClients } from "@/lib/agent/kubernetes/client"
@@ -10,6 +10,8 @@ import {
 
 const POD_DELETE_TIMEOUT_MS = 30_000
 const POD_DELETE_POLL_MS = 500
+const POD_READY_TIMEOUT_MS = 120_000
+const DEPLOYMENT_ROLLOUT_TIMEOUT_MS = 120_000
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
@@ -47,6 +49,62 @@ async function waitForPodDeletion(
   )
 }
 
+type PodResponse = Awaited<ReturnType<CoreV1Api["readNamespacedPod"]>>
+
+function isPodReady(pod: PodResponse) {
+  return (
+    pod.status?.phase === "Running" &&
+    pod.status.conditions?.some(
+      (condition) => condition.type === "Ready" && condition.status === "True"
+    ) === true
+  )
+}
+
+async function waitForPodReady(core: CoreV1Api, namespace: string, pod: string) {
+  const deadline = Date.now() + POD_READY_TIMEOUT_MS
+  let latest: PodResponse | undefined
+
+  while (Date.now() < deadline) {
+    latest = await core.readNamespacedPod({ name: pod, namespace })
+    if (isPodReady(latest)) return latest
+
+    if (latest.status?.phase === "Failed") {
+      throw new Error(
+        `Pod ${namespace}/${pod} failed verification: ${latest.status.reason ?? latest.status.message ?? "phase is Failed"}.`
+      )
+    }
+    await new Promise((resolve) => setTimeout(resolve, POD_DELETE_POLL_MS))
+  }
+
+  throw new Error(
+    `Pod ${namespace}/${pod} was recreated but did not become Ready within ${POD_READY_TIMEOUT_MS / 1000}s (phase: ${latest?.status?.phase ?? "unknown"}).`
+  )
+}
+
+async function waitForDeploymentRollout(
+  apps: AppsV1Api,
+  namespace: string,
+  deployment: string
+) {
+  const deadline = Date.now() + DEPLOYMENT_ROLLOUT_TIMEOUT_MS
+  let latest: Awaited<ReturnType<AppsV1Api["readNamespacedDeployment"]>> | undefined
+
+  while (Date.now() < deadline) {
+    latest = await apps.readNamespacedDeployment({ name: deployment, namespace })
+    const desired = latest.spec?.replicas ?? 1
+    const status = latest.status
+    const observed = status?.observedGeneration === latest.metadata?.generation
+    const available = (status?.availableReplicas ?? 0) >= desired
+    const updated = (status?.updatedReplicas ?? 0) >= desired
+    if (observed && available && updated) return latest
+    await new Promise((resolve) => setTimeout(resolve, POD_DELETE_POLL_MS))
+  }
+
+  throw new Error(
+    `Deployment ${namespace}/${deployment} was patched but did not become available within ${DEPLOYMENT_ROLLOUT_TIMEOUT_MS / 1000}s (available: ${latest?.status?.availableReplicas ?? 0}).`
+  )
+}
+
 export async function applyKubernetesAction(proposal: ActionProposal) {
   const parsed = actionProposalSchema.safeParse(proposal)
   if (!parsed.success) {
@@ -71,10 +129,15 @@ export async function applyKubernetesAction(proposal: ActionProposal) {
       ? [{ op: "add", path: `/metadata/labels/${escapedKey}`, value }]
       : [{ op: "add", path: "/metadata/labels", value: { [key]: value } }]
     const response = await core.patchNode({ name: node, body })
+    const verified = await core.readNode({ name: node })
+    if (verified.metadata?.labels?.[key] !== value) {
+      throw new Error(`Node ${node} was patched but its ${key} label could not be verified.`)
+    }
     return {
       action: action.action,
       node: response.metadata?.name ?? node,
-      labels: response.metadata?.labels,
+      labels: verified.metadata?.labels,
+      verification: { status: "verified" },
     }
   }
 
@@ -87,11 +150,16 @@ export async function applyKubernetesAction(proposal: ActionProposal) {
       namespace,
       body: [{ op: "remove", path: "/spec/template/spec/nodeSelector" }],
     })
+    const verified = await waitForDeploymentRollout(apps, namespace, deployment)
     return {
       action: action.action,
       deployment: response.metadata?.name ?? deployment,
       namespace: response.metadata?.namespace ?? namespace,
-      nodeSelector: response.spec?.template?.spec?.nodeSelector,
+      nodeSelector: verified.spec?.template?.spec?.nodeSelector,
+      verification: {
+        status: "verified",
+        availableReplicas: verified.status?.availableReplicas ?? 0,
+      },
     }
   }
 
@@ -139,11 +207,15 @@ export async function applyKubernetesAction(proposal: ActionProposal) {
         namespace,
         body: replacement,
       })
+      const verified = await waitForPodReady(core, namespace, pod)
       return {
         action: action.action,
         namespace,
         pod: recreated.metadata?.name ?? pod,
-        phase: recreated.status?.phase ?? "Pending",
+        phase: verified.status?.phase ?? recreated.status?.phase ?? "Pending",
+        node: verified.spec?.nodeName,
+        ready: isPodReady(verified),
+        verification: { status: "verified" },
       }
     } catch (error) {
       throw new Error(
