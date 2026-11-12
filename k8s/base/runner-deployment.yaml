@@ -42,6 +42,12 @@ spec:
             # ServiceAccount token.
             - name: KUBERNETES_AGENT_ROLE
               value: "runner"
+            # Bun's fetch does not consistently consume the request-scoped CA
+            # dispatcher used by client-node 2.x. Trust the same projected
+            # ServiceAccount CA at process startup instead; certificate
+            # verification remains enabled.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
             - name: DATABASE_USER
               valueFrom:
                 configMapKeyRef:

@@ -16,10 +16,30 @@ ClusterRoleBinding for the Kubernetes API. The runner pod keeps the mounted
 ServiceAccount token and is the only workload bound to the `kubernetes-agent-readonly`
 and `kubernetes-agent-approved-writer` ClusterRoles.
 
-In-cluster Kubernetes API calls use `loadFromCluster()`; local development falls
-back to `loadFromDefault()` (e.g. `~/.kube/config`). The runner pod is exposed as a
-private ClusterIP Service (`kubernetes-agent-runner`) that only the web pod can reach
-through the cluster network; it is not exposed to the internet.
+In-cluster Kubernetes API calls use `loadFromCluster()`; local development uses
+the kubeconfig selected by `KUBECONFIG` or the default kubeconfig for the user
+running the process. The client refuses to use client-node's `localhost:8080`
+fallback when no context is configured.
+
+For local development, verify the same user and environment that runs the app:
+
+```bash
+kubectl config current-context
+kubectl get nodes --request-timeout=10s
+```
+
+If the app runs in a container, mount the kubeconfig and set `KUBECONFIG` to
+the path inside that container. Prefer inline `certificate-authority-data` in
+the kubeconfig; a `certificate-authority` host path must also be mounted at the
+same path. The runner also sets `NODE_EXTRA_CA_CERTS` to the projected
+ServiceAccount CA because Bun's fetch does not consistently consume the
+request-scoped CA dispatcher from `@kubernetes/client-node`. This preserves
+certificate verification; do not set `insecure-skip-tls-verify` for a shared
+or production cluster.
+
+The runner pod is exposed as a private ClusterIP Service
+(`kubernetes-agent-runner`) that only the web pod can reach through the cluster
+network; it is not exposed to the internet.
 
 The base policy is intentionally minimal. The writer ClusterRole only covers the
 verbs and resources the approved write actions need: `nodes:patch`, `pods:create`,
