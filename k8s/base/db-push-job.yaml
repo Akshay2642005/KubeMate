@@ -32,6 +32,7 @@ spec:
               "bun",
               "/opt/migrator/node_modules/drizzle-kit/bin.cjs",
               "push",
+              "--force",
               "--config",
               "/opt/migrator/drizzle.config.ts",
             ]
@@ -61,8 +62,31 @@ spec:
                 configMapKeyRef:
                   name: kubernetes-agent-config
                   key: DATABASE_NAME
-            - name: DATABASE_URL
-              value: postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)
+            - name: PGHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_HOST
+            - name: PGPORT
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_PORT
+            - name: PGDATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_NAME
+            - name: PGUSER
+              valueFrom:
+                configMapKeyRef:
+                  name: kubernetes-agent-config
+                  key: DATABASE_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kubernetes-agent-secrets
+                  key: DATABASE_PASSWORD
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

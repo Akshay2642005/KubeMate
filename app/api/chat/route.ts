@@ -17,13 +17,13 @@ import { db } from "@/db"
 import { chatApprovals } from "@/db/schema"
 import { agentGraph, MAX_TOOL_TURNS } from "@/lib/agent/graph"
 import type {
-  ActionProposal,
   AgentRunState,
   ChatUIMessage,
   ToolLog,
   WorkflowStep,
 } from "@/lib/chat-types"
 import { messageText, saveMessages } from "@/lib/chat/persistence"
+import { actionProposalSchema } from "@/lib/agent/kubernetes/proposals"
 import { isRunner, proxyToRunner } from "@/lib/runner"
 import { MAX_CHAT_BODY_BYTES, rateLimit } from "@/lib/rate-limit"
 import { getChat } from "@/queries/chats"
@@ -122,22 +122,19 @@ function actionProposal(messages: BaseMessage[]) {
         kind?: string
         action?: string
         summary?: string
-        input?: ActionProposal["input"]
+        input?: unknown
       }
-      if (
-        parsed.kind === "action_proposal" &&
-        (parsed.action === "label_node" ||
-          parsed.action === "remove_deployment_node_selector" ||
-          parsed.action === "recreate_pod_without_node_selector") &&
-        parsed.summary &&
-        parsed.input
-      ) {
-        return {
-          action: parsed.action,
-          summary: parsed.summary,
-          input: parsed.input,
-        } as ActionProposal
-      }
+      if (parsed.kind !== "action_proposal") continue
+
+      // The same discriminated schema validates tool output here and the
+      // stored proposal at execution time, so only real actions can mint an
+      // approval card.
+      const proposal = actionProposalSchema.safeParse({
+        action: parsed.action,
+        summary: parsed.summary,
+        input: parsed.input,
+      })
+      if (proposal.success) return proposal.data
     } catch {
       // Only structured action proposals can enter the approval flow.
     }

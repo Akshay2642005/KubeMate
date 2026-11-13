@@ -3,6 +3,15 @@ import * as k8s from "@kubernetes/client-node"
 type KubernetesClients = {
   core: k8s.CoreV1Api
   apps: k8s.AppsV1Api
+  batch: k8s.BatchV1Api
+  networking: k8s.NetworkingV1Api
+  rbac: k8s.RbacAuthorizationV1Api
+  autoscaling: k8s.AutoscalingV2Api
+  storage: k8s.StorageV1Api
+  policy: k8s.PolicyV1Api
+  apiextensions: k8s.ApiextensionsV1Api
+  object: k8s.KubernetesObjectApi
+  version: k8s.VersionApi
 }
 
 type CachedClients = {
@@ -82,6 +91,17 @@ export function getKubernetesClients(): KubernetesClients {
     value: {
       core: kubeConfig.makeApiClient(k8s.CoreV1Api),
       apps: kubeConfig.makeApiClient(k8s.AppsV1Api),
+      batch: kubeConfig.makeApiClient(k8s.BatchV1Api),
+      networking: kubeConfig.makeApiClient(k8s.NetworkingV1Api),
+      rbac: kubeConfig.makeApiClient(k8s.RbacAuthorizationV1Api),
+      autoscaling: kubeConfig.makeApiClient(k8s.AutoscalingV2Api),
+      storage: kubeConfig.makeApiClient(k8s.StorageV1Api),
+      policy: kubeConfig.makeApiClient(k8s.PolicyV1Api),
+      apiextensions: kubeConfig.makeApiClient(k8s.ApiextensionsV1Api),
+      // KubernetesObjectApi resolves arbitrary apiVersion/kind pairs through
+      // API discovery, which powers the generic get/list/patch/delete tools.
+      object: k8s.KubernetesObjectApi.makeApiClient(kubeConfig),
+      version: kubeConfig.makeApiClient(k8s.VersionApi),
     },
     expiresAt: Date.now() + CLIENT_TTL_MS,
   }

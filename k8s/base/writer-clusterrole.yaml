@@ -3,15 +3,63 @@ kind: ClusterRole
 metadata:
   name: kubernetes-agent-approved-writer
 rules:
+  # Node mutations go through dedicated audited actions (label_node,
+  # set_node_unschedulable); generic patch/delete/apply refuse Node kinds.
   - apiGroups: [""]
     resources:
       - nodes
     verbs: ["patch"]
+  # Pod lifecycle: recreate_pod_without_node_selector creates+deletes,
+  # delete_pod deletes.
   - apiGroups: [""]
     resources:
       - pods
     verbs: ["create", "delete"]
+  # Workload mutations: nodeSelector removal, scale, rollout restart.
   - apiGroups: ["apps"]
     resources:
+      - daemonsets
       - deployments
+      - replicasets
+      - statefulsets
     verbs: ["patch"]
+  # Generic approved actions (patch_resource, delete_resource,
+  # apply_manifest) cover the remaining namespaced resource kinds the agent
+  # manages. RBAC objects and cluster infrastructure are refused in code, so
+  # they are intentionally absent here too.
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - endpoints
+      - limitranges
+      - persistentvolumeclaims
+      - resourcequotas
+      - secrets
+      - serviceaccounts
+      - services
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs: ["create", "update", "delete"]
+  - apiGroups: ["batch"]
+    resources:
+      - cronjobs
+      - jobs
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["create", "update", "patch", "delete"]

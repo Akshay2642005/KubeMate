@@ -37,8 +37,14 @@ spec:
     - to:
         - namespaceSelector: {}
       ports:
+        # DNS runs on UDP 53 primarily; TCP 53 serves large responses and
+        # zone transfers. Both are required for resolution to work.
         - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
         - port: 853
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -64,15 +70,30 @@ spec:
       ports:
         - port: 3000
   egress:
-    # The runner talks to the API server, Postgres, the model provider, and DNS.
-    - to: []
+    # Postgres is an in-cluster pod.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kubernetes-agent-postgres
       ports:
         - port: 5432
+    # TCP 443 covers the Kubernetes API server and the model provider. Both
+    # are typically external endpoints, so namespaceSelector cannot match
+    # them — an ipBlock is required.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+    # DNS: kube-dns lives in a namespace, but keep the peer broad and rely on
+    # the port restriction; UDP 53 is the important one.
     - to:
         - namespaceSelector: {}
       ports:
-        - port: 443
-    - to: []
-      ports:
         - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
         - port: 853
+          protocol: TCP

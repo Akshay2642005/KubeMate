@@ -8,7 +8,9 @@ export async function GET() {
   try {
     await db.execute(sql`select 1`)
     return Response.json({ status: "ready" })
-  } catch {
+  } catch (error) {
+    // Surface the cause in pod logs; the probe response stays generic.
+    console.error("[ready] database check failed", error)
     return Response.json({ status: "unavailable" }, { status: 503 })
   }
 }

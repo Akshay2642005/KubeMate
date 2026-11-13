@@ -56,15 +56,34 @@ function splitByAuthor(message: ChatUIMessage, bots: ChatBot[]) {
 // Shows the exact target and change behind an approval, not just the model's
 // prose summary, so a reviewer can see what will actually run.
 function ApprovalDetails({ data }: { data: ApprovalRequest }) {
-  const input = data.input
+  const input = data.input as Record<string, unknown>
   const rows: [string, string][] = [["Action", data.action]]
 
-  if ("namespace" in input) rows.push(["Namespace", input.namespace])
-  if ("node" in input) rows.push(["Node", input.node])
-  if ("deployment" in input) rows.push(["Deployment", input.deployment])
-  if ("pod" in input) rows.push(["Pod", input.pod])
-  if ("key" in input) rows.push(["Label key", input.key])
-  if ("value" in input) rows.push(["Label value", input.value])
+  // Render every scalar input field so reviewers see the exact target and
+  // change for any action, not just the original three.
+  const labels: Record<string, string> = {
+    namespace: "Namespace",
+    node: "Node",
+    deployment: "Deployment",
+    pod: "Pod",
+    name: "Name",
+    kind: "Kind",
+    apiVersion: "API version",
+    key: "Label key",
+    value: "Label value",
+    replicas: "Replicas",
+    gracePeriodSeconds: "Grace period (s)",
+    propagationPolicy: "Propagation policy",
+    unschedulable: "Unschedulable",
+  }
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined || value === null) continue
+    if (typeof value === "object") {
+      rows.push([labels[key] ?? key, JSON.stringify(value)])
+    } else {
+      rows.push([labels[key] ?? key, String(value)])
+    }
+  }
 
   return (
     <dl className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
